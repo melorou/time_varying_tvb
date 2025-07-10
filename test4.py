@@ -3,6 +3,8 @@ import numpy as np
 from tvb.simulator.lab import *
 from tvb.simulator.simulator import Simulator
 
+
+
 def simulate_time_varying_connectivity(
     connectivities: np.ndarray,
     slice_dur: float,
@@ -47,6 +49,7 @@ def simulate_time_varying_connectivity(
 
     # Build Connectivity
     region_labels = np.array([f"R{i+1}" for i in range(n_regions)], dtype="<U128")
+    
     conn = connectivity.Connectivity(
         weights=connectivities[..., 0],
         tract_lengths=tract_lengths,
@@ -55,12 +58,14 @@ def simulate_time_varying_connectivity(
     )
 
     # Configure Simulator
-    sigmas = np.full(n_regions, noise_sigma)
-    sim = Simulator(
+
+    sim = simulator.Simulator(
         model=models.Generic2dOscillator(),
         connectivity=conn,
-        coupling=coupling.Linear(a=coupling_gain),
-        integrator=integrators.HeunStochastic(dt=dt, noise=noise.Additive(nsig=sigmas)),
+        coupling=coupling.Linear(a=np.array([coupling_gain])),
+        integrator=integrators.HeunStochastic(
+            dt=dt, 
+            noise=noise.Additive(nsig=np.array([noise_sigma]))),
         monitors=monitor_list
     )
     sim.configure()
@@ -74,9 +79,9 @@ def simulate_time_varying_connectivity(
         sim.simulation_length = slice_dur
         (t_tavg, d_tavg), (t_b, d_b) = sim.run()
         # Shift and collect
-        tavg_times.append(t_tavg + k * slice_dur)
+        tavg_times.append(t_tavg)
         tavg_data.append(d_tavg)
-        bold_times.append(t_b + k * slice_dur)
+        bold_times.append(t_b)
         bold_data.append(d_b)
 
     # Concatenate
@@ -87,7 +92,61 @@ def simulate_time_varying_connectivity(
 
     return full_time, full_bold, full_tavg_time, full_tavg_data
 
-# Example of calling the function:
-# full_time, full_bold, full_tavg_time, full_tavg_data = simulate_time_varying_connectivity(
-#     connectivities, slice_dur
-# )
+# Call the function and plot results
+
+# Example 1
+
+connectivities_1 = np.stack([
+    np.array([[2.3, 0.9],
+              [-1.2, -0.5]],),
+    np.array([[0.0, 0.0],
+              [0.0, 0.0],]),
+    np.array([[-4.4, 1.6],
+              [0.8, -2.2]],)
+], axis=2)
+
+slide_dur_1 = 20_000.0   # ms
+
+full_time_1, full_bold_1, full_tavg_time_1, full_tavg_data_1 = simulate_time_varying_connectivity(
+    connectivities=connectivities_1,
+    slice_dur=slide_dur_1,
+)
+
+plt.figure(figsize=(12, 6))
+
+plt.plot(full_time_1, full_bold_1[:, 0, :, 0])
+plt.ylabel("BOLD")
+plt.title("BOLD Signal Over Time for Two Regions")
+plt.xlabel('Time (ms)')
+
+# Example 2
+
+connectivities_2 = np.stack([
+    [[ 1,  -2,   3,  -4],
+     [ 5,  -6,   7,  -8],
+     [ 9, -10,  11, -12],
+     [13, -14,  15, -16]],
+
+    [[-1,   2,  -3,   4],
+     [-5,   6,  -7,   8],
+     [-9,  10, -11,  12],
+     [-13,  14, -15,  16]],
+
+    [[ 0,   0,   0,   0],
+     [ 0,   0,   0,   0],
+     [ 0,   0,   0,   0],
+     [ 0,   0,   0,   0]]
+], axis=2)
+
+slide_dur_2 = 30_000.0   # ms
+
+full_time_2, full_bold_2, full_tavg_time_2, full_tavg_data_2 = simulate_time_varying_connectivity(
+    connectivities=connectivities_2,
+    slice_dur=slide_dur_2,
+)
+
+plt.figure(figsize=(12, 6))
+plt.plot(full_time_2, full_bold_2[:, 0, :, 0])
+plt.ylabel("BOLD")
+plt.title("BOLD Signal Over Time for Four Regions")
+plt.xlabel('Time (ms)')
