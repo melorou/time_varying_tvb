@@ -94,6 +94,8 @@ def simulate_time_varying_connectivity(
 
 # Call the function and plot results
 
+"""
+
 # Example 1
 
 connectivities_1 = np.stack([
@@ -119,6 +121,7 @@ plt.ylabel("BOLD")
 plt.title("BOLD Signal Over Time for Two Regions")
 plt.xlabel('Time (ms)')
 
+
 # Example 2
 
 connectivities_2 = np.stack([
@@ -143,6 +146,7 @@ slide_dur_2 = 30_000.0   # ms
 full_time_2, full_bold_2, full_tavg_time_2, full_tavg_data_2 = simulate_time_varying_connectivity(
     connectivities=connectivities_2,
     slice_dur=slide_dur_2,
+    coupling_gain=0.4,
 )
 
 plt.figure(figsize=(12, 6))
@@ -150,3 +154,90 @@ plt.plot(full_time_2, full_bold_2[:, 0, :, 0])
 plt.ylabel("BOLD")
 plt.title("BOLD Signal Over Time for Four Regions")
 plt.xlabel('Time (ms)')
+
+
+# Example 3
+
+connectivities_3 = np.stack([
+    np.zeros((4, 4)),   
+
+    np.array([[ 1, -1,  2, -2],                       
+              [ 3, -3,  4, -4],
+              [ 5, -5,  6, -6],
+              [ 7, -7,  8, -8]]),
+
+    np.array([[-8,  8, -7,  7],                       
+              [-6,  6, -5,  5],
+              [-4,  4, -3,  3],
+              [-2,  2, -1,  1]])
+], axis=2)
+
+slice_dur_3 = 30_000.0   # ms
+
+full_time_3, full_bold_3, full_tavg_time_3, full_tavg_data_3 = simulate_time_varying_connectivity(
+    connectivities=connectivities_3,
+    slice_dur=slice_dur_3,
+    coupling_gain=0.4,
+)
+
+plt.figure(figsize=(12, 6))
+plt.plot(full_time_3, full_bold_3[:, 0, :, 0])
+plt.ylabel("BOLD")
+plt.title("BOLD Signal Over Time for Four Regions")
+plt.xlabel('Time (ms)')
+
+
+# Example 4
+
+connectivities_4 = np.stack(
+    [np.random.randn(4, 4) for _ in range(6)],
+    axis=2
+)
+
+slice_dur_4 = 30_000.0   # ms
+
+full_time_4, full_bold_4, full_tavg_time_4, full_tavg_data_4 = simulate_time_varying_connectivity(
+    connectivities=connectivities_4,
+    slice_dur=slice_dur_4,
+)
+
+plt.figure(figsize=(12, 6))
+plt.plot(full_time_4, full_bold_4[:, 0, :, 0])
+plt.ylabel("BOLD")
+plt.title("BOLD Signal Over Time for Four Regions")
+plt.xlabel('Time (ms)')
+
+plt.figure(figsize=(12, 6))
+plt.plot(full_tavg_time_4, full_tavg_data_4[:, 0, :, 0])
+plt.ylabel("Temporal Average")
+plt.title("Temporal Average Over Time for Four Regions")
+plt.xlabel('Time (ms)')
+
+
+# Example 5
+
+connectivities_5 = np.stack(
+    [np.random.uniform(-5, 5, (4, 4)) for _ in range(6)],
+    axis=2
+)
+
+slice_dur_5 = 30_000.0   # ms
+
+full_time_5, full_bold_5, full_tavg_time_5, full_tavg_data_5 = simulate_time_varying_connectivity(
+    connectivities=connectivities_5,
+    slice_dur=slice_dur_5
+)
+
+plt.figure(figsize=(12, 6))
+plt.plot(full_tavg_time_5, full_tavg_data_5[:, 0, :, 0])
+plt.ylabel("Temporal Average")
+plt.title("Temporal Average Over Time for Four Regions")
+plt.xlabel('Time (ms)')
+
+plt.figure(figsize=(12, 6))
+plt.plot(full_time_5, full_bold_5[:, 0, :, 0])
+plt.ylabel("BOLD")
+plt.title("BOLD Signal Over Time for Four Regions")
+plt.xlabel('Time (ms)')
+
+"""
