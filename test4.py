@@ -91,6 +91,7 @@ def simulate_time_varying_connectivity(
     for k in range(n_slices):
         sim.connectivity.weights = connectivities[..., k]
         conn.configure() # conn.configure() is invoked automatically in simulator, but we don't reconfigure the simulator
+        print(conn.summary_info())
         sim.simulation_length = slice_dur
         (t_tavg, d_tavg), (t_b, d_b) = sim.run()
         tavg_times.append(t_tavg)
