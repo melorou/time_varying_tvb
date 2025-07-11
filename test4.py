@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from tvb.simulator.lab import *
-from tvb.simulator.simulator import Simulator
+import types
 
 
 
@@ -57,6 +57,7 @@ def simulate_time_varying_connectivity(
         centres=centres
     )
 
+
     # Configure Simulator
 
     sim = simulator.Simulator(
@@ -70,15 +71,28 @@ def simulate_time_varying_connectivity(
     )
     sim.configure()
 
+    sim._last_weights = None
+    _orig = sim._loop_compute_node_coupling
+
+    def _logged_compute(self, step):
+        w = self.connectivity.weights
+        if self._last_weights is None or not np.array_equal(w, self._last_weights):
+            print(f"[Step {step}] connectivity.weights changed to:\n{w}\n")
+            # copy so future mutations don’t alias
+            self._last_weights = w.copy()
+        return _orig(step)
+
+    sim._loop_compute_node_coupling = types.MethodType(_logged_compute, sim)
+
     # Run slices
     bold_times, bold_data = [], []
     tavg_times, tavg_data = [], []
 
     for k in range(n_slices):
         sim.connectivity.weights = connectivities[..., k]
+        conn.configure() # conn.configure() is invoked automatically in simulator, but we don't reconfigure the simulator
         sim.simulation_length = slice_dur
         (t_tavg, d_tavg), (t_b, d_b) = sim.run()
-        # Shift and collect
         tavg_times.append(t_tavg)
         tavg_data.append(d_tavg)
         bold_times.append(t_b)
@@ -121,6 +135,7 @@ plt.ylabel("BOLD")
 plt.title("BOLD Signal Over Time for Two Regions")
 plt.xlabel('Time (ms)')
 
+"""
 
 # Example 2
 
@@ -146,7 +161,6 @@ slide_dur_2 = 30_000.0   # ms
 full_time_2, full_bold_2, full_tavg_time_2, full_tavg_data_2 = simulate_time_varying_connectivity(
     connectivities=connectivities_2,
     slice_dur=slide_dur_2,
-    coupling_gain=0.4,
 )
 
 plt.figure(figsize=(12, 6))
@@ -177,7 +191,6 @@ slice_dur_3 = 30_000.0   # ms
 full_time_3, full_bold_3, full_tavg_time_3, full_tavg_data_3 = simulate_time_varying_connectivity(
     connectivities=connectivities_3,
     slice_dur=slice_dur_3,
-    coupling_gain=0.4,
 )
 
 plt.figure(figsize=(12, 6))
@@ -187,6 +200,7 @@ plt.title("BOLD Signal Over Time for Four Regions")
 plt.xlabel('Time (ms)')
 
 
+"""
 # Example 4
 
 connectivities_4 = np.stack(
