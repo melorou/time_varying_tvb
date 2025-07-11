@@ -83,6 +83,7 @@ def simulate_time_varying_connectivity(
         # Configure coupling & delays & history length
         sim.configure()
 
+        print(conn.summary_info())
         
         sim._last_weights = None
         _orig = sim._loop_compute_node_coupling
