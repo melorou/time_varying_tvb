@@ -249,7 +249,7 @@ def plot_FC_slices(raw_monitor, slice_durations, structural_slices=None, fc_meth
         plt.show()
 
 
-def apply_physio_to_bold2(
+def apply_physio_to_bold(
     bold, snr, dt, baseline_variance, dt_physio=0.1,
     region_to_plot=0, do_plots=True
 ):
