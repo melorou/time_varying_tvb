@@ -247,3 +247,217 @@ def plot_FC_slices(raw_monitor, slice_durations, structural_slices=None, fc_meth
         fig.suptitle(f"Slice {idx+1}: {t0:.1f}–{t1:.1f} ms")
         plt.tight_layout(rect=[0, 0.03, 1, 0.9])
         plt.show()
+
+
+def apply_physio_to_bold2(
+    bold, snr, dt, baseline_variance, dt_physio=0.1,
+    region_to_plot=0, do_plots=True
+):
+    """
+    Add physiological artifacts to BOLD using your existing pipeline,
+    and (optionally) plot the artifacts first, then raw vs +physio side-by-side.
+
+    Parameters
+    ----------
+    bold : array (T, m) or TVB-like (T,1,m,1)
+    snr : float
+        Target SNR = var(signal) / var(noise).
+    dt : float
+        BOLD sampling interval (seconds).
+    baseline_variance : float or array-like (m,)
+        Assumed baseline variance(s) for scaling the artifacts.
+    dt_physio : float, default 0.1
+    region_to_plot : int, default 0
+        Which region to plot in the diagnostics.
+    do_plots : bool, default True
+        If True, show: (1) artifact-only plots, then (2) raw vs +physio.
+
+    Returns
+    -------
+    x_with_physio : array (T', m)
+        BOLD with physio artifacts added (aligned length).
+    """
+    import numpy as np
+    import scipy as sp
+    import sdeint
+    import matplotlib.pyplot as plt
+
+    # clean up BOLD input
+    x_raw = np.squeeze(np.asarray(bold))
+    if x_raw.ndim == 1:
+        x_raw = x_raw[:, None]
+    if x_raw.ndim != 2:
+        raise ValueError(f"`bold` must be 2D after squeeze; got {x_raw.shape}")
+    T, m = x_raw.shape
+    r = int(region_to_plot)
+    if not (0 <= r < m):
+        raise ValueError(f"region_to_plot {r} out of range 0..{m-1}")
+
+    # baseline variance validation
+    bv = np.asarray(baseline_variance)
+    if bv.ndim == 0:
+        pass
+    elif bv.ndim == 1 and bv.shape[0] == m:
+        pass
+    else:
+        raise ValueError("baseline_variance must be a scalar or a 1D array of length m.")
+    if np.any(bv <= 0):
+        raise ValueError("baseline_variance must be positive.")
+
+    if dt <= 0 or dt_physio <= 0:
+        raise ValueError("dt and dt_physio must be positive.")
+    M = int(round(dt / dt_physio))
+    if M < 1:
+        raise ValueError("dt must be >= dt_physio so we can decimate to the BOLD rate.")
+
+
+
+    # Generating RW & PPG with Stratonovich Heun
+    def RW_PPG_sdeint(X, t):
+        import numpy as _np
+        dX = _np.zeros(4)
+        x, y, x1, x2 = X
+        a_res = 0.75; b_res = 1; w_res = 0.3*2*_np.pi; g_res = 0.0
+        dx = (a_res - b_res*x**2 - b_res*y**2)*x - (w_res - g_res*x**2 - g_res*y**2)*y
+        dy = (a_res - b_res*x**2 - b_res*y**2)*y + (w_res - g_res*x**2 - g_res*y**2)*x
+        dX[0] = dx; dX[1] = dy
+        mu = 0.5; p1 = -0.3; p2 = 0.3; b = 1.; a = 1.; c = 14.; k = 1.5
+        y1 = _np.tanh(k*x1); y2 = _np.tanh(k*x2)
+        tau_minus1 = a*dx + c
+        dX[2] = (-x1 + (1+mu)*y1 - b*y2 + p1) * tau_minus1
+        dX[3] = (-x2 + (1+mu)*y2 + b*y1 + p2) * tau_minus1
+        return dX
+
+    def sdeint_G(X, t):
+        import numpy as _np
+        return _np.diag([0.25, 0.25, 0.5, 0.5])
+
+    t_physio = (np.arange(0 + dt_physio, (T*dt) + dt_physio, dt_physio)
+                .round(int(1/dt_physio/10 + 1)))
+    physio_result = sdeint.stratHeun(RW_PPG_sdeint, sdeint_G, [1, 1, 0.1, 0.08], t_physio)
+    RW  = physio_result[:, 0]
+    PPG = physio_result[:, 3]
+
+    
+    t_RF = np.arange(0, 60, dt_physio)
+
+    def gamma_func(tau, sigma, t):
+        import numpy as _np
+        g = t**(np.sqrt(tau)/sigma) * np.exp(-t/(sigma*np.sqrt(tau)))
+        return g / g.max()
+
+    tau_1c = [3.1, 1.2];  sigma_1c = [2.5, 3.2];  tau_2c = [5.6, 3.5];  sigma_2c = [0.9, 0.5];  R_c = [-1.1, -1.5]
+    tau_1r = [1.9, 3.1];  sigma_1r = [2.9, 3.1];  tau_2r = [12.5, 10.5]; sigma_2r = [0.5, 0.4];  R_r = [-2.6, -4.7]
+
+    CRF = np.zeros([t_RF.shape[0], m]); RRF = np.zeros([t_RF.shape[0], m])
+    for i in range(2):
+        CRF[:, i] = gamma_func(tau_1c[i], sigma_1c[i], t_RF) + R_c[i]*gamma_func(tau_2c[i], sigma_2c[i], t_RF)
+        CRF[:, i] /= np.linalg.norm(CRF[:, i])
+        RRF[:, i] = gamma_func(tau_1r[i], sigma_1r[i], t_RF) + R_r[i]*gamma_func(tau_2r[i], sigma_2r[i], t_RF)
+        RRF[:, i] /= np.linalg.norm(RRF[:, i])
+
+    crf = CRF[:, 0]; a = crf - crf.mean(); b = CRF[:, 1] - CRF[:, 1].mean()
+    crf_n = b - (b.dot(a.T)) / (a.dot(a.T)) * a
+    crf   = crf  / np.linalg.norm(crf)
+    crf_n = crf_n/ np.linalg.norm(crf_n)
+
+    rrf = RRF[:, 0]; a = rrf - rrf.mean(); b = RRF[:, 1] - RRF[:, 1].mean()
+    rrf_n = b - (b.dot(a.T)) / (a.dot(a.T)) * a
+    rrf   = rrf  / np.linalg.norm(rrf)
+    rrf_n = rrf_n/ np.linalg.norm(rrf_n)
+
+    counter = 1
+    basket_c = np.arange(counter, m); np.random.shuffle(basket_c)
+    for i in basket_c:
+        a = -2*(i-1)/(m-1) + 1
+        b = -4/(m-2)**2 * (i - m/2)**2 + 1
+        CRF[:, counter] = (a*crf + b*crf_n) / np.linalg.norm(a*crf + b*crf_n)
+        counter += 1
+
+    counter = 1
+    basket_r = np.arange(counter, m); np.random.shuffle(basket_r)
+    for i in basket_r:
+        a = -2*(i-1)/(m-1) + 1
+        b = -4/(m-2)**2 * (i - m/2)**2 + 1
+        RRF[:, counter] = (a*rrf + b*rrf_n) / np.linalg.norm(a*rrf + b*rrf_n)
+        counter += 1
+
+    # HR/RF extraction and convolution with CRF/RRF
+    PPG_peaks, _ = sp.signal.find_peaks(PPG, distance=.5/dt_physio, height=.1)
+    HR_tmp = 60. / (PPG_peaks[1:] - PPG_peaks[0:-1]) / dt_physio
+    HR = np.interp(t_physio, t_physio[PPG_peaks[0:-1]], HR_tmp)
+
+    RF = RW**2
+
+    HR_conv = np.zeros([len(HR), m]); RF_conv = np.zeros_like(HR_conv); physio = np.zeros_like(HR_conv)
+    for i in range(m):
+        HR_conv[:, i] = np.convolve(CRF[:, i], HR - HR.mean(), mode='full')[:1 - len(CRF)]
+        mu_c = HR_conv[:, i].mean();  sigma_c = HR_conv[:, i].std()
+        HR_conv[:, i] = (HR_conv[:, i] - mu_c) / sigma_c
+
+        RF_conv[:, i] = np.convolve(RRF[:, i], RF - RF.mean(), mode='full')[:1 - len(RRF)]
+        mu_r = RF_conv[:, i].mean();  sigma_r = RF_conv[:, i].std()
+        RF_conv[:, i] = (RF_conv[:, i] - mu_r) / sigma_r
+
+        physio[:, i] = HR_conv[:, i] + RF_conv[:, i]
+
+    # plot artifacts alone
+    if do_plots:
+        t_phys = np.arange(len(physio)) * dt_physio
+        plt.figure(figsize=(7.5, 3.6))
+        plt.plot(t_phys, HR_conv[:, r], '--', alpha=0.6, label='HR confound')
+        plt.plot(t_phys, RF_conv[:, r], '--', alpha=0.6, label='RF confound')
+        plt.plot(t_phys, physio[:, r],  '-',  color='k', label='HR+RF (sum)')
+        plt.title(f"Region {r+1} — physiological artifact (physio sampling)")
+        plt.xlabel("Time (s)"); plt.ylabel("Amplitude"); plt.grid(True); plt.legend()
+        plt.tight_layout(); plt.show()
+
+    
+    ampl = {}
+    SNRs = [snr]
+    for i in SNRs:
+        ampl[i] = (bv / (np.var(physio, axis=0) * i))**0.5
+
+    # decimate physio to BOLD rate
+    physio_signal = sp.signal.decimate(physio, M, axis=0)  # (T_bold, m)
+
+    # Align lengths
+    Tmix = min(x_raw.shape[0], physio_signal.shape[0])
+    x_raw         = x_raw[:Tmix, :]
+    physio_signal = physio_signal[:Tmix, :]
+
+    Data = {}
+    for i in SNRs:
+        Data[i] = {}
+        Data[i]['raw'] = x_raw
+        x_physio = x_raw + ampl[i] * physio_signal
+        Data[i]['physio'] = x_physio
+
+    x_with_physio = Data[snr]['physio']
+
+    # if user wants to plot side-by-side raw vs +physio
+    if do_plots:
+        t_bold = np.arange(Tmix) * dt
+        # artifact at BOLD rate (what you actually add)
+        artifact_r = (ampl[snr] * physio_signal)[:, r]
+
+        plt.figure(figsize=(7.5, 3.6))
+        plt.plot(t_bold, artifact_r)
+        plt.axhline(0, ls='--', lw=1, alpha=0.6)
+        plt.title(f"Region {r+1} — artifact only (BOLD sampling)")
+        plt.xlabel("Time (s)"); plt.ylabel("Amplitude"); plt.grid(True)
+        plt.tight_layout(); plt.show()
+
+        # side-by-side raw vs +physio
+        raw_r  = x_raw[:Tmix, r]
+        with_r = x_with_physio[:Tmix, r]
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+        axes[0].plot(t_bold, raw_r);  axes[0].set_title(f"Region {r+1} — Raw BOLD")
+        axes[0].set_xlabel("Time (s)"); axes[0].set_ylabel("Signal (a.u.)"); axes[0].grid(True)
+        axes[1].plot(t_bold, with_r); axes[1].set_title(f"Region {r+1} — BOLD + physio")
+        axes[1].set_xlabel("Time (s)"); axes[1].grid(True)
+        ymin = min(raw_r.min(), with_r.min()); ymax = max(raw_r.max(), with_r.max())
+        for ax in axes: ax.set_ylim(ymin, ymax)
+        plt.tight_layout(); plt.show()
+
+    return x_with_physio
