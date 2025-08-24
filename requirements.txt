@@ -1,0 +1,5 @@
+tvb-library
+numpy
+scipy
+matplotlib
+sdeint

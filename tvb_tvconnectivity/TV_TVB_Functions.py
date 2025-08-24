@@ -5,6 +5,13 @@ from tvb.simulator.lab import *
 import scipy as sp
 import sdeint
 
+from .FC_Methods import (
+    Corr_func, PCorr_func, Prec_func, MI_func,
+    ZeroLagReg_func, pwGC_func, GGC_func, Coh_func,
+    MVCoh_func, PCoh_func, DCoh_func, PDCoh_func,
+    DTF_func
+)
+
 def simulate_time_varying_connectivity(
     connectivities: np.ndarray,
     slice_dur: Union[float, Sequence[float]],
@@ -150,14 +157,6 @@ def simulate_time_varying_connectivity(
         full_outputs.append((full_t, full_d))
 
     return full_outputs
-
-
-from FC_Methods import (
-    Corr_func, PCorr_func, Prec_func, MI_func,
-    ZeroLagReg_func, pwGC_func, GGC_func, Coh_func,
-    MVCoh_func, PCoh_func, DCoh_func, PDCoh_func,
-    DTF_func
-)
 
 # Mapping measure names to functions
 FC_measures = {

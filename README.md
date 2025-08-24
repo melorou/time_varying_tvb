@@ -31,7 +31,7 @@ Utilities for running **time-varying connectivity** simulations in The Virtual B
 
   * `Corr_func, PCorr_func, Prec_func, MI_func, ZeroLagReg_func, pwGC_func, GGC_func, Coh_func, MVCoh_func, PCoh_func, DCoh_func, PDCoh_func, DTF_func`
 
-* To use functions:
+To use functions:
 * python -m venv .venv
 * . .venv/Script/activate
 * pip install -r requirements.txt
