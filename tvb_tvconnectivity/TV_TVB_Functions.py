@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Sequence, Union, List, Dict
 from tvb.simulator.lab import *
+import scipy as sp
+import sdeint
 
 def simulate_time_varying_connectivity(
     connectivities: np.ndarray,
@@ -277,10 +279,6 @@ def apply_physio_to_bold(
     x_with_physio : array (T', m)
         BOLD with physio artifacts added (aligned length).
     """
-    import numpy as np
-    import scipy as sp
-    import sdeint
-    import matplotlib.pyplot as plt
 
     # clean up BOLD input
     x_raw = np.squeeze(np.asarray(bold))
@@ -309,7 +307,6 @@ def apply_physio_to_bold(
     M = int(round(dt / dt_physio))
     if M < 1:
         raise ValueError("dt must be >= dt_physio so we can decimate to the BOLD rate.")
-
 
 
     # Generating RW & PPG with Stratonovich Heun
