@@ -33,7 +33,7 @@ Utilities for running **time-varying connectivity** simulations in The Virtual B
 
 To use functions:
 * python -m venv .venv
-* . .venv/Script/activate
+* . .venv/Scripts/activate
 * pip install -r requirements.txt
 * import core functions from tvb_tvbconnectivy
 
